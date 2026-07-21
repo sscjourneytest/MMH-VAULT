@@ -1,0 +1,7 @@
+name = "mmh-vault-2"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+
+# Secrets (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET,
+# SUPABASE_SERVICE_ROLE_KEY) are NOT set here and must never be committed
+# to the repo. Set them in the Cloudflare dashboard instead — see below.
