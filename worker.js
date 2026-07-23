@@ -3,8 +3,16 @@ export default {
     const SUPABASE_URL = "https://duqmejyypqgkrjlpplrz.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1cW1lanl5cHFna3JqbHBwbHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2MDIyNTAsImV4cCI6MjA4NzE3ODI1MH0.aAIITdr-BS-D-TJHY1fEkqgN4CRVwsyz90d2I9IrhVc";
 
+    const allowedOrigins = [
+      "https://mockmatrixhub.in",
+      "https://www.mockmatrixhub.in",
+      "https://mockmatrixhub.pages.dev",
+    ];
+    const requestOrigin = request.headers.get("Origin");
+    const allowOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+
     const corsHeaders = {
-      "Access-Control-Allow-Origin": "https://mockmatrixhub.pages.dev",
+      "Access-Control-Allow-Origin": allowOrigin,
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
       "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info, x-supabase-auth, x-supabase-api-version, preferred_alphabets, x-address-t, accept-profile, content-profile, Prefer, x-razorpay-signature",
       "Access-Control-Allow-Credentials": "true",
