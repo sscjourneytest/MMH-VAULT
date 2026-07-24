@@ -37,6 +37,9 @@ export default {
     if (url.pathname === "/razorpay-webhook" && request.method === "POST") {
       return handleWebhook(request, env, SUPABASE_URL, corsHeaders);
     }
+    if (url.pathname === "/admin-grant-premium" && request.method === "POST") {
+      return handleAdminGrant(request, env, SUPABASE_URL, SUPABASE_ANON_KEY, corsHeaders);
+    }
 
     // ---------------------------------------------------------
     // EXISTING: generic Supabase reverse proxy (unchanged)
@@ -121,14 +124,16 @@ async function computeFinalAmount(env, SUPABASE_URL, planName, couponCode) {
   let coupon = null;
 
   if (couponCode) {
+    const nowIso = new Date().toISOString();
     const couponRes = await supabaseServiceRequest(
       env, SUPABASE_URL,
-      `/rest/v1/coupons?code=eq.${encodeURIComponent(couponCode)}&is_active=eq.true&select=*`,
+      `/rest/v1/coupons?code=eq.${encodeURIComponent(couponCode)}&is_active=eq.true` +
+      `&or=(valid_until.is.null,valid_until.gte.${nowIso})&select=*`,
       "GET"
     );
     const couponRows = await couponRes.json();
     if (!couponRows || couponRows.length === 0) {
-      return { error: "Invalid or inactive coupon" };
+      return { error: "Invalid, inactive, or expired coupon" };
     }
     coupon = couponRows[0];
     discountPercent = coupon.discount_percent;
@@ -288,6 +293,67 @@ async function handleWebhook(request, env, SUPABASE_URL, corsHeaders) {
   }
 }
 
+async function verifyRole(env, SUPABASE_URL, userId, allowedRoles) {
+  const res = await supabaseServiceRequest(
+    env, SUPABASE_URL,
+    `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=role`,
+    "GET"
+  );
+  const rows = await res.json();
+  if (!rows || rows.length === 0) return false;
+  return allowedRoles.includes(rows[0].role);
+}
+
+async function handleAdminGrant(request, env, SUPABASE_URL, SUPABASE_ANON_KEY, corsHeaders) {
+  try {
+    const user = await getUserFromToken(request, SUPABASE_URL, SUPABASE_ANON_KEY);
+    if (!user || !user.id) {
+      return json({ error: "Not authenticated" }, 401, corsHeaders);
+    }
+
+    // Only 'owner' may directly grant premium — checked server-side,
+    // never trust a role claim from the browser.
+    const isOwner = await verifyRole(env, SUPABASE_URL, user.id, ["owner"]);
+    if (!isOwner) {
+      return json({ error: "Forbidden — owner access required" }, 403, corsHeaders);
+    }
+
+    const { email, validity_days } = await request.json();
+    if (!email || !validity_days) {
+      return json({ error: "Missing email or validity_days" }, 400, corsHeaders);
+    }
+
+    const profileRes = await supabaseServiceRequest(
+      env, SUPABASE_URL,
+      `/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id,username`,
+      "GET"
+    );
+    const profiles = await profileRes.json();
+    if (!profiles || profiles.length === 0) {
+      return json({ error: "No user found with that email" }, 404, corsHeaders);
+    }
+    const targetId = profiles[0].id;
+
+    const expiresAt = new Date(Date.now() + Number(validity_days) * 24 * 60 * 60 * 1000).toISOString();
+
+    const updateRes = await supabaseServiceRequest(
+      env, SUPABASE_URL,
+      `/rest/v1/profiles?id=eq.${encodeURIComponent(targetId)}`,
+      "PATCH",
+      { is_paid: true, expires_at: expiresAt }
+    );
+
+    if (!updateRes.ok) {
+      const errDetails = await updateRes.json();
+      return json({ error: "Failed to update profile", details: errDetails }, 502, corsHeaders);
+    }
+
+    return json({ status: "ok", username: profiles[0].username, expires_at: expiresAt }, 200, corsHeaders);
+  } catch (err) {
+    return json({ error: err.message }, 500, corsHeaders);
+  }
+}
+
 async function verifySignature(body, signature, secret) {
   if (!signature || !secret) return false;
 
@@ -304,3 +370,4 @@ async function verifySignature(body, signature, secret) {
 
   return expectedHex === signature;
 }
+
